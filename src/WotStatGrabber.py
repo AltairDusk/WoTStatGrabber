@@ -23,6 +23,7 @@ USER_ID_REQ_LIMIT = '1'
 USER_ID_REQ_URL = 'http://api.worldoftanks.com/uc/accounts/api/1.1/?{params}'
 USER_STATS_REQ_URL = ('http://api.worldoftanks.com/uc/accounts/'
                       '{id}/api/1.9/?{params}')
+_top_low_tiers = 3
 
 
 class Error(Exception):
@@ -147,15 +148,15 @@ def prepare_output_row(user_stats, user_id):
     stats_row['wins'] = wins
     stats_row['win_pct'] = (wins / battles) * 100
 
-    avg_tier_info = calc_tier_info(user_stats, battles)
+    avg_tier_info = calc_tier_info(user_stats, battles, top_low_tiers= _top_low_tiers)
     stats_row['avg_tier'] = avg_tier_info['avg_tier']
     stats_row['vehicle_battles'] = avg_tier_info['vehicle_battles']
-    stats_row['battles_top3_low_tiers'] = avg_tier_info['top3_low_battles']
+    stats_row['battles_top_low_tiers'] = avg_tier_info['top_low_battles']
 
     return stats_row
 
 
-def calc_tier_info(user_stats, battles):
+def calc_tier_info(user_stats, battles, top_low_tiers=3):
     """Calculates the average tier and other tier-based
     information given a set of user statistics
 
@@ -181,9 +182,9 @@ def calc_tier_info(user_stats, battles):
             low_tiers.append(vehicle_battles)
             
     tier_sum = 0
-    for tier in sorted(low_tiers, reverse=True)[:5]:
+    for tier in sorted(low_tiers, reverse=True)[:top_low_tiers]:
         tier_sum += tier
-    tier_info['top3_low_battles'] = tier_sum / 3
+    tier_info['top_low_battles'] = tier_sum
     
     return tier_info
     
@@ -204,7 +205,7 @@ def create_user_stats_csv(input_file, output_file):
         'avg_spots', 'tot_kills', 'avg_kills',
         'tot_dmg', 'avg_dmg', 'wins',
         'win_pct', 'avg_tier', 'vehicle_battles',
-        'battles_top3_low_tiers'
+        'battles_top_low_tiers'
         ]
     
     with open(input_file, encoding='utf-8') as names_file:
@@ -237,7 +238,12 @@ if __name__ == '__main__':
     parser.add_argument('output_file', metavar='output_file', type=str,
                         help='Complete path for the output file containing stats (will be overwritten if it exists).'
                         )
+    parser.add_argument('--top_lt', metavar='top_lt', type=int,
+                        help='(Optional) Number of top played low tier tanks used to calculate games played in low tiers.')
     args = parser.parse_args()
+    
+    if args.top_lt:
+        _top_low_tiers = args.top_lt
     
     # Get the stats
     create_user_stats_csv(args.input_file, args.output_file)
