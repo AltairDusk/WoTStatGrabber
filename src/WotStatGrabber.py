@@ -16,6 +16,7 @@ import csv
 import json
 import urllib.request
 import argparse
+from operator import itemgetter
 
 REQ_SOURCE_TOKEN = 'WG-WoT_Assistant-1.3.2'
 USER_ID_REQ_OFFSET = '0'
@@ -152,6 +153,7 @@ def prepare_output_row(user_stats, user_id):
     stats_row['avg_tier'] = avg_tier_info['avg_tier']
     stats_row['vehicle_battles'] = avg_tier_info['vehicle_battles']
     stats_row['battles_top_low_tiers'] = avg_tier_info['top_low_battles']
+    stats_row['sum_tier_top_low_tiers'] = avg_tier_info['sum_low_tiers']
 
     return stats_row
 
@@ -179,12 +181,15 @@ def calc_tier_info(user_stats, battles, top_low_tiers=3):
         tier_info['avg_tier'] += (tier / battles) * vehicle_battles
         
         if tier <= 3:
-            low_tiers.append(vehicle_battles)
+            low_tiers.append([vehicle_battles, tier])
             
+    low_battles = 0
     tier_sum = 0
-    for tier in sorted(low_tiers, reverse=True)[:top_low_tiers]:
-        tier_sum += tier
-    tier_info['top_low_battles'] = tier_sum
+    for vehicle in sorted(low_tiers, key=itemgetter(0), reverse=True)[:top_low_tiers]:
+        low_battles += vehicle[0]
+        tier_sum += vehicle[1]
+    tier_info['top_low_battles'] = low_battles
+    tier_info['sum_low_tiers'] = tier_sum
     
     return tier_info
     
@@ -205,7 +210,7 @@ def create_user_stats_csv(input_file, output_file):
         'avg_spots', 'tot_kills', 'avg_kills',
         'tot_dmg', 'avg_dmg', 'wins',
         'win_pct', 'avg_tier', 'vehicle_battles',
-        'battles_top_low_tiers'
+        'battles_top_low_tiers', 'sum_tier_top_low_tiers'
         ]
     
     with open(input_file, encoding='utf-8') as names_file:
