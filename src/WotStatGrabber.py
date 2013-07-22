@@ -131,6 +131,8 @@ def prepare_output_row(user_stats, user_id):
     stats_row['battles'] = battles
     stats_row['tot_xp'] = ratings['xp']['value']
     stats_row['avg_xp'] = ratings['battle_avg_xp']['value']
+    
+    
 
     # Add calculated stat information
     spots = ratings['spotted']['value']
@@ -148,6 +150,14 @@ def prepare_output_row(user_stats, user_id):
     wins = ratings['battle_wins']['value']
     stats_row['wins'] = wins
     stats_row['win_pct'] = (wins / battles) * 100
+    
+    cap_points = ratings['ctf_points']['value']
+    stats_row['tot_cap_points'] = cap_points
+    stats_row['avg_cap_points'] = cap_points / battles 
+    
+    def_points = ratings['dropped_ctf_points']['value']
+    stats_row['tot_def_points'] = def_points
+    stats_row['avg_def_points'] = def_points / battles
 
     avg_tier_info = calc_tier_info(user_stats, battles, top_low_tiers= _top_low_tiers)
     stats_row['avg_tier'] = avg_tier_info['avg_tier']
@@ -209,8 +219,9 @@ def create_user_stats_csv(input_file, output_file):
         'tot_xp', 'avg_xp', 'tot_spots', 
         'avg_spots', 'tot_kills', 'avg_kills',
         'tot_dmg', 'avg_dmg', 'wins',
-        'win_pct', 'avg_tier', 'vehicle_battles',
-        'battles_top_low_tiers', 'sum_tier_top_low_tiers'
+        'win_pct', 'tot_cap_points', 'avg_cap_points',
+        'tot_def_points', 'avg_def_points', 'avg_tier', 
+        'vehicle_battles', 'battles_top_low_tiers', 'sum_tier_top_low_tiers'
         ]
     
     with open(input_file, encoding='utf-8') as names_file:
