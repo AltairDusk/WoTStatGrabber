@@ -181,6 +181,17 @@ def prepare_output_row(user_stats, user_id):
         stats_row[tlb2] = avg_tier_info['top_low_battles2']
         stats_row[slt2] = avg_tier_info['sum_low_tiers2']
         stats_row[wlt2] = avg_tier_info['weighted_sum_low_tier2']
+        
+        stats_row['t1_battles'] = avg_tier_info['t1_battles']
+        stats_row['t2_battles'] = avg_tier_info['t2_battles']
+        stats_row['t3_battles'] = avg_tier_info['t3_battles']
+        stats_row['t4_battles'] = avg_tier_info['t4_battles']
+        stats_row['t5_battles'] = avg_tier_info['t5_battles']
+        stats_row['t6_battles'] = avg_tier_info['t6_battles']
+        stats_row['t7_battles'] = avg_tier_info['t7_battles']
+        stats_row['t8_battles'] = avg_tier_info['t8_battles']
+        stats_row['t9_battles'] = avg_tier_info['t9_battles']
+        stats_row['t10_battles'] = avg_tier_info['t10_battles']
 
     return stats_row
 
@@ -199,6 +210,19 @@ def calc_tier_info(user_stats, battles):
     tier_info['vehicle_battles'] = 0
     tier_info['avg_tier'] = 0
     low_tiers = []
+    
+    if _wn:
+        tier_info['t1_battles'] = 0
+        tier_info['t2_battles'] = 0
+        tier_info['t3_battles'] = 0
+        tier_info['t4_battles'] = 0
+        tier_info['t5_battles'] = 0
+        tier_info['t6_battles'] = 0
+        tier_info['t7_battles'] = 0
+        tier_info['t8_battles'] = 0
+        tier_info['t9_battles'] = 0
+        tier_info['t10_battles'] = 0
+    
 
     # Spin through all vehicles and gather low tier stats
     for vehicle in user_stats['vehicles']:
@@ -207,8 +231,11 @@ def calc_tier_info(user_stats, battles):
         tier_info['vehicle_battles'] += vehicle_battles
         tier_info['avg_tier'] += (tier / battles) * vehicle_battles
         
-        if _wn and tier <= 3:
-            low_tiers.append([vehicle_battles, tier])
+        if _wn:
+            tier_info[''.join(['t', str(tier), '_battles'])] += vehicle_battles
+            
+            if tier <= 3:
+                low_tiers.append([vehicle_battles, tier])
     
     if _wn:        
         # Calculate for the first set of top low tiers
@@ -283,7 +310,10 @@ def create_user_stats_csv(input_file, output_file):
             ''.join(['sum_tier_top_', str(_top_low_tiers2), '_low_tiers']),
             ''.join(['weighted_sum_tier_top_', 
                      str(_top_low_tiers2), '_low_tiers'
-                     ])
+                     ]),
+            't1_battles', 't2_battles', 't3_battles', 't4_battles', 
+            't5_battles', 't6_battles', 't7_battles', 't8_battles', 
+            't9_battles', 't10_battles'
             ])
     
     with open(input_file, encoding='utf-8') as names_file:
