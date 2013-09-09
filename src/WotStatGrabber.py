@@ -19,6 +19,25 @@ import argparse
 from operator import itemgetter
 
 REQ_SOURCE_TOKEN = 'WG-WoT_Assistant-1.3.2'
+REQ_APP_IDS = {'NA' : '16924c431c705523aae25b6f638c54dd',
+               'RU' : '171745d21f7f98fd8878771da1000a31',
+               'EU' : 'd0a293dc77667c9328783d489c8cef73',
+               'ASIA' : '39b4939f5f2460b3285bfa708e4b252c',
+               'KR' : 'ffea0f1c3c5f770db09357d94fe6abfb'}
+REQ_BASE_URLS = {'NA' : 'http://api.worldoftanks.com',
+                 'RU' : 'http://api.worldoftanks.ru',
+                 'EU' : 'http://api.worldoftanks.eu',
+                 'ASIA' : 'http://api.worldoftanks.asia',
+                 'KR' : 'http://api.worldoftanks.kr'}
+REQ_PLAYER_INFO = '/2.0/account/info/?{params}'
+REQ_PLAYER_SEARCH = '/2.0/account/list/?{params}'
+REQ_PLAYER_TANKS = '/2.0/account/tanks/?{params}'
+REQ_PLAYER_STATS_SLICE = '/2.0/stats/accountbytime/?{params}'
+REQ_CLAN_INFO = '/2.0/clan/info//?{params}'
+REQ_CLAN_SEARCH = '/2.0/clan/info//?{params}'
+REQ_TANKS_LIST = '/2.0/encyclopedia/tanks/?{params}'
+REQ_TANK_INFO = '/2.0/encyclopedia/tankinfo/?{params}'
+
 USER_ID_REQ_OFFSET = '0'
 USER_ID_REQ_LIMIT = '1'
 USER_ID_REQ_URL = 'http://api.worldoftanks.com/uc/accounts/api/1.1/?{params}'
@@ -27,6 +46,9 @@ USER_STATS_REQ_URL = ('http://api.worldoftanks.com/uc/accounts/'
 _wn = False
 _top_low_tiers1 = 3
 _top_low_tiers2 = 5
+_req_server = 'NA'
+_tank_ids = []
+_tank_tiers = {}
 
 
 class Error(Exception):
@@ -38,8 +60,8 @@ class PlayerNotFoundError(Error):
     """Exception raised when a player cannot be found
 
     Attributes:
-            player -- username that was looked up
-            message -- explanation of the error
+        player -- username that was looked up
+        message -- explanation of the error
 
     """
 
@@ -55,36 +77,56 @@ class PlayerNotFoundError(Error):
         self.message = message
 
 
+class RequestError(Error):
+    """Exception raised when a request fails
+    
+    Attributes:
+        message -- explanation of the error
+    """
+    
+    def __init__(self, message):
+        """Initialization of exception
+
+        Keyword arguments:
+            message -- explanation of the error
+        """
+
+        self.message = message
+        
+
 def request_user_id(user_name):
     """Get the user ID from WG API given user name
 
     Keyword arguments:
-    userName -- user to look up
+        userName -- user to look up
 
     """
 
     # Build the URL and make the request to WG API.
     parameters = urllib.parse.urlencode({
-        'source_token': REQ_SOURCE_TOKEN,
-        'search': user_name,
-        'offset': USER_ID_REQ_OFFSET,
-        'limit': USER_ID_REQ_LIMIT
+        'application_id' : REQ_APP_IDS[_req_server], 
+        'search' : user_name
         })
-    urlstring = USER_ID_REQ_URL.format(params=parameters)
+    urlstring = ''.join([REQ_BASE_URLS[_req_server], 
+                         REQ_PLAYER_SEARCH.format(params=parameters)
+                         ])
     response = urllib.request.urlopen(urlstring)
     encoding = response.headers.get_content_charset()
 
     # Parse the JSON and get the user ID after
     # making sure we've found the correct user.
     userInfo = json.loads(response.read().decode(encoding))
-    items = userInfo['data']['items']
-    if len(items) > 1:
-        raise PlayerNotFoundError(user_name, 'Multiple players found')
+    items = userInfo['data']
     # Usernames are not case-sensitive for API requests
-    elif not items or items[0]['name'].lower() != user_name.lower():
+    if not items:
         raise PlayerNotFoundError(user_name, 'Player was not found')
-    else:
-        user_id = items[0]['id']
+    
+    for user in items:
+        if user['nickname'].lower() == user_name.lower():
+            user_id = user['id']
+    
+    if not user_id:
+        raise PlayerNotFoundError(user_name, 'Player was not found')
 
     return user_id
 
@@ -93,24 +135,108 @@ def request_user_stats(user_id):
     """Get the user statistics from WG API given user ID
 
     Keyword arguments:
-    user_id -- user to look up
+        user_id -- user to look up
 
     """
 
     # Build the URL and make the request to WG API.
-    parameters = urllib.parse.urlencode({'source_token': REQ_SOURCE_TOKEN})
-    urlstring = USER_STATS_REQ_URL.format(id=str(user_id), params=parameters)
+    parameters = urllib.parse.urlencode({
+        'application_id' : REQ_APP_IDS[_req_server],
+        'account_id' : user_id
+        })
+    urlstring = ''.join([REQ_BASE_URLS[_req_server], 
+                         REQ_PLAYER_INFO.format(params=parameters)
+                         ])
     response = urllib.request.urlopen(urlstring)
     encoding = response.headers.get_content_charset()
 
     # Parse and return the JSON after checking for errors
     user_info = json.loads(response.read().decode(encoding))
-    if user_info['status'] != 'ok':
-        raise PlayerNotFoundError(user_id, user_info['status_code'])
+    if user_info['status'] == 'error':
+        raise PlayerNotFoundError(user_id, user_info['error']['message'])
     else:
-        stats = user_info['data']
+        stats = user_info['data'][str(user_id)]
     return stats
 
+
+def request_user_tanks(user_id):
+    """Gets the statistics for tanks played by a user
+    
+    Keyword arguments:
+        user_id -- user to look up tank stats for
+        
+    """
+
+    # Build the URL and make the request to WG API.
+    parameters = urllib.parse.urlencode({
+        'application_id' : REQ_APP_IDS[_req_server],
+        'account_id' : user_id
+        })
+    urlstring = ''.join([REQ_BASE_URLS[_req_server],
+                         REQ_PLAYER_TANKS.format(params=parameters)
+                         ])
+    response = urllib.request.urlopen(urlstring)
+    encoding = response.headers.get_content_charset()
+    
+    # Parse and return the JSON after checking for errors
+    tanks_list = json.loads(response.read().decode(encoding))
+    if tanks_list['status'] == 'error':
+        raise RequestError('Player tank stats could not be retrieved.')
+    else:
+        tanks = tanks_list['data'][str(user_id)]
+    return tanks
+
+
+def request_tank_list():
+    """Gets the tank list from WG API
+    
+    """
+    
+    # Build the URL and make the request to WG API.
+    parameters = urllib.parse.urlencode({
+        'application_id' : REQ_APP_IDS[_req_server]
+        })
+    urlstring = ''.join([REQ_BASE_URLS[_req_server],
+                         REQ_TANKS_LIST.format(params=parameters)
+                         ])
+    response = urllib.request.urlopen(urlstring)
+    encoding = response.headers.get_content_charset()
+    
+    # Parse and return the JSON after checking for errors
+    tanks_list = json.loads(response.read().decode(encoding))
+    if tanks_list['status'] == 'error':
+        raise RequestError('Tanks list could not be retrieved.')
+    else:
+        tanks = tanks_list['data']
+    return tanks
+
+
+def populate_tank_info():
+    """Requests the tanks list then compiles a 
+    list of sorted ids and a dict of tiers.
+    
+    """
+    
+    tanks_list = request_tank_list()
+    for key in sorted(tanks_list):
+        _tank_ids.append(key)
+        _tank_tiers[key] = tanks_list[key]['level']
+    
+
+def prepare_tank_list_row(tanks_list):
+    """Build a dictionary with the relevant tank information
+    
+    Keyword arguments:
+        tanks_list -- tank information loaded from json
+    
+    """
+
+    tanks_row = {}
+    for key in sorted(tanks_list):
+        tanks_row[key] = tanks_list[key]['name']
+    
+    return tanks_row
+    
 
 def prepare_output_row(user_stats, user_id):
     """Build a dictionary with the relevant stats
@@ -121,47 +247,50 @@ def prepare_output_row(user_stats, user_id):
 
     """
 
-    ratings = user_stats['ratings']
+    ratings = user_stats['statistics']['all']
     stats_row = {}
 
     # Add user identifying information
-    stats_row['name'] = user_stats['name']
+    stats_row['name'] = user_stats['nickname']
     stats_row['id'] = user_id
 
     # Add the basic stat information
-    battles = ratings['battles']['value']
+    battles = ratings['battles']
     stats_row['battles'] = battles
-    stats_row['tot_xp'] = ratings['xp']['value']
-    stats_row['avg_xp'] = ratings['battle_avg_xp']['value']
+    stats_row['tot_xp'] = ratings['xp']
+    stats_row['avg_xp'] = ratings['battle_avg_xp']
     
-    
-
     # Add calculated stat information
-    spots = ratings['spotted']['value']
+    spots = ratings['spotted']
     stats_row['tot_spots'] = spots
     stats_row['avg_spots'] = spots / battles
     
-    kills = ratings['frags']['value']
+    kills = ratings['frags']
     stats_row['tot_kills'] = kills
     stats_row['avg_kills'] = kills / battles
     
-    damage = ratings['damage_dealt']['value']
+    damage = ratings['damage_dealt']
     stats_row['tot_dmg'] = damage
     stats_row['avg_dmg'] = damage / battles
 
-    wins = ratings['battle_wins']['value']
+    wins = ratings['wins']
     stats_row['wins'] = wins
     stats_row['win_pct'] = (wins / battles) * 100
     
-    cap_points = ratings['ctf_points']['value']
+    stats_row['losses'] = ratings['losses']
+    stats_row['draws'] = ratings['draws']
+    
+    cap_points = ratings['capture_points']
     stats_row['tot_cap_points'] = cap_points
     stats_row['avg_cap_points'] = cap_points / battles 
     
-    def_points = ratings['dropped_ctf_points']['value']
+    def_points = ratings['dropped_capture_points']
     stats_row['tot_def_points'] = def_points
     stats_row['avg_def_points'] = def_points / battles
+    
+    tanks = request_user_tanks(user_id)
 
-    avg_tier_info = calc_tier_info(user_stats, battles)
+    avg_tier_info = calc_tier_info(tanks, battles)
     stats_row['avg_tier'] = avg_tier_info['avg_tier']
     stats_row['vehicle_battles'] = avg_tier_info['vehicle_battles']
     
@@ -192,16 +321,21 @@ def prepare_output_row(user_stats, user_id):
         stats_row['t8_battles'] = avg_tier_info['t8_battles']
         stats_row['t9_battles'] = avg_tier_info['t9_battles']
         stats_row['t10_battles'] = avg_tier_info['t10_battles']
+        
+        tank_battles = avg_tier_info['tank_battles']
+        for key in sorted(tank_battles):
+            stats_row[key] = tank_battles[key]
+            _tank_ids.append(key)
 
     return stats_row
 
 
-def calc_tier_info(user_stats, battles):
+def calc_tier_info(tanks, battles):
     """Calculates the average tier and other tier-based
     information given a set of user statistics
 
     Keyword arguments:
-        user_stats -- user stat information loaded from json
+        tanks -- user tank stat information loaded from json
         battles -- total battles for this user
 
     """
@@ -212,6 +346,7 @@ def calc_tier_info(user_stats, battles):
     low_tiers = []
     
     if _wn:
+        tank_battles = {}
         tier_info['t1_battles'] = 0
         tier_info['t2_battles'] = 0
         tier_info['t3_battles'] = 0
@@ -225,19 +360,24 @@ def calc_tier_info(user_stats, battles):
     
 
     # Spin through all vehicles and gather low tier stats
-    for vehicle in user_stats['vehicles']:
-        tier = vehicle['level']
-        vehicle_battles = vehicle['battle_count']
+    for tank in tanks:
+        tank_stats = tank['statistics']['all']
+        tank_id = tank['tank_id']
+        tier = _tank_tiers[str(tank_id)]
+        vehicle_battles = tank_stats['battles']
         tier_info['vehicle_battles'] += vehicle_battles
         tier_info['avg_tier'] += (tier / battles) * vehicle_battles
         
         if _wn:
+            tank_battles[str(tank_id)] = vehicle_battles
             tier_info[''.join(['t', str(tier), '_battles'])] += vehicle_battles
             
             if tier <= 3:
                 low_tiers.append([vehicle_battles, tier])
     
-    if _wn:        
+    if _wn:  
+        tier_info['tank_battles'] = tank_battles
+              
         # Calculate for the first set of top low tiers
         low_tier_info1 = calc_low_tiers(low_tiers, _top_low_tiers1)
         tier_info['top_low_battles1'] = low_tier_info1['top_low_battles']
@@ -293,7 +433,7 @@ def create_user_stats_csv(input_file, output_file):
         'name', 'id', 'battles',
         'tot_xp', 'avg_xp', 'tot_spots', 
         'avg_spots', 'tot_kills', 'avg_kills',
-        'tot_dmg', 'avg_dmg', 'wins',
+        'tot_dmg', 'avg_dmg', 'wins', 'losses', 'draws',
         'win_pct', 'tot_cap_points', 'avg_cap_points',
         'tot_def_points', 'avg_def_points', 'avg_tier', 
         'vehicle_battles'
@@ -315,6 +455,9 @@ def create_user_stats_csv(input_file, output_file):
             't5_battles', 't6_battles', 't7_battles', 't8_battles', 
             't9_battles', 't10_battles'
             ])
+        
+        populate_tank_info()
+        fieldnames.extend(_tank_ids)
     
     with open(input_file, encoding='utf-8') as names_file:
         with open(output_file, 'w', newline='') as csv_file:
@@ -335,7 +478,31 @@ def create_user_stats_csv(input_file, output_file):
                 
                 # Output stats to CSV
                 output.writerow(row)
-                
+
+
+def create_tank_list_csv(output_file):
+    """Gets the list of tanks names/ids and writes
+    the results in csv format to outputFile
+    
+    Keyword arguments:
+        output_file -- CSV file that will be created with results
+        
+    """    
+    
+    tanks_list = request_tank_list()
+    tanks_row = prepare_tank_list_row(tanks_list)
+    
+    fieldnames = []
+    for key in sorted(tanks_row):
+        fieldnames.append(key)
+    
+    with open(output_file, 'w', newline='') as csv_file:
+        output = csv.DictWriter(csv_file, fieldnames, dialect='excel', 
+                                extrasaction='ignore'
+                                )
+        output.writeheader()
+        output.writerow(tanks_row)
+            
 
 if __name__ == '__main__':
     # Parse the arguments
@@ -367,7 +534,26 @@ if __name__ == '__main__':
                                 for the second output field. This only 
                                 functions when used with the --wn flag.'''
                         )
+    parser.add_argument('--server', metavar='S', type=str,
+                        help ='''(Optional) Server to request statistics from. 
+                                Valid options are NA, RU, EU, ASIA, KR. 
+                                Defaults to NA.'''
+                        )
+    parser.add_argument('--tank_list', action='store_true',
+                        help= '''(Optional) Outputs a list of tank ID -> tank 
+                                name mappings. Input file will be ignored 
+                                when this flag is specified.'''
+                        )
     args = parser.parse_args()
+    
+    if (args.server):
+        if (args.server in REQ_BASE_URLS):
+            _req_server = args.server
+        else:
+            print(''.join([args.server, 
+                           ' is not a valid server.',
+                           ' Defaulting to NA server.'
+                           ]))
     
     if args.wn:
         _wn = True
@@ -377,7 +563,11 @@ if __name__ == '__main__':
         if args.top_lt2:
             _top_low_tiers2 = args.top_lt2
     
-    # Get the stats
-    create_user_stats_csv(args.input_file, args.output_file)
+    if args.tank_list:
+        #Get the tank list
+        create_tank_list_csv(args.output_file)
+    else:
+        # Get the stats
+        create_user_stats_csv(args.input_file, args.output_file)
     
     
